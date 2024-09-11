@@ -1,157 +1,115 @@
 import socket
 import threading
-import binascii
 
-class Packet:
-    def __init__(self, buffer):
-        self.buffer = buffer
-        self.packet_type = buffer[0:1].hex() 
-        self.start_bit = buffer[1:3].hex()
-        self.length = buffer[3:4].hex()
-        self.protocol_number = buffer[4:5].hex()
+class Server:
+    def __init__(self, host='127.0.0.1', port=5050):
+        self.host = host
+        self.port = port
+        self.server_socket = None
+        self.protocols = {
+            '01': self.decode_protocol_01,
+            '02': self.decode_protocol_02,
+            '03': self.decode_protocol_03,
+        }
 
+    def start(self):
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
+        print(f"Servidor iniciado em {self.host}:{self.port}")
 
-class DevicePacket(Packet):
-    def __init__(self, buffer):
-        super().__init__(buffer)
-        offset = 4
-        
-        # GPS Information
-        self.date_time = buffer[offset:offset+6].hex()
-        offset += 6
-        self.gps_quantity = buffer[offset:offset+1].hex()
-        offset += 1
-        self.latitude = buffer[offset:offset+4].hex()
-        offset += 4
-        self.longitude = buffer[offset:offset+4].hex()
-        offset += 4
-        self.speed = buffer[offset:offset+1].hex()
-        offset += 1
-        self.course_status = buffer[offset:offset+2].hex()
-        offset += 2
-        
-        # LBS Information
-        self.mcc = buffer[offset:offset+2].hex()
-        offset += 2
-        self.mnc = buffer[offset:offset+1].hex()
-        offset += 1
-        self.lac = buffer[offset:offset+2].hex()
-        offset += 2
-        self.cell_id = buffer[offset:offset+3].hex()
-        offset += 3
-        
-        # Status Information
-        self.device_info = buffer[offset:offset+1].hex()
-        offset += 1
-        self.battery_voltage_level = buffer[offset:offset+1].hex()
-        offset += 1
-        self.gsm_signal_strength = buffer[offset:offset+1].hex()
-        offset += 1
-        self.battery_voltage = buffer[offset:offset+2].hex()
-        offset += 2
-        self.external_voltage = buffer[offset:offset+2].hex()
-        offset += 2
-        
-        # Outros campos
-        self.mileage = buffer[offset:offset+4].hex()
-        offset += 4
-        self.hourmeter = buffer[offset:offset+4].hex()
-        offset += 4
-        self.information_serial_number = buffer[offset:offset+2].hex()
-        offset += 2
-        self.error_check = buffer[offset:offset+2].hex()
-        offset += 2
-        self.end_bit = buffer[offset:offset+2].hex()
+        while True:
+            client_socket, client_address = self.server_socket.accept()
+            print(f"Conexão estabelecida com {client_address}")
 
-    def decode(self):
+            client_handler = threading.Thread(target=self.handle_client, args=(client_socket,))
+            client_handler.start()
+
+    def handle_client(self, client_socket):
+        buffer = bytearray()
+        while True:
+            try:
+                data = client_socket.recv(4096)
+                if not data:
+                    break
+
+                buffer.extend(data)
+
+                while len(buffer) >= 20: 
+                    response = self.process_packet(buffer)
+                    if response:
+                        client_socket.sendall(response.encode())
+            except Exception as e:
+                print(f"Erro ao lidar com o cliente: {e}")
+                break
+
+        client_socket.close()
+        print("Conexão fechada")
+
+    def process_packet(self, buffer):
+        try:
+            if len(buffer) < 20:
+                return
+
+            start_bit = buffer[:2].hex()
+            length = buffer[2:3].hex()
+            protocol_number = buffer[3:4].hex()
+            device_id = buffer[4:12].hex()
+            information_serial_number = buffer[12:14].hex()
+            error_check = buffer[14:16].hex()
+            end_bit = buffer[16:18].hex()
+
+            buffer.clear()
+
+            print(f"Start Bit: {start_bit}")
+            print(f"Length: {length}")
+            print(f"Protocol Number: {protocol_number}")
+            print(f"Device ID: {device_id}")
+            print(f"Information Serial Number: {information_serial_number}")
+            print(f"Error Check: {error_check}")
+            print(f"End Bit: {end_bit}")
+
+            if decode_func:
+            response = decode_func(device_id, information_serial_number, error_check)   
+            else:
+            response = f"Protocolo desconhecido: {protocol_number}"
+
+            return response
+        
+        except Exception as e:
+            return f"Erro ao processar o pacote: {e}"
+        
+        
+    def decode_protocol_01(self, device_id, information_serial_number, error_check):
+        # Decodificação para o protocolo 01 (exemplo: data YYYYMMDD)
+        year = int(information_serial_number[:4], 16)
+        month = int(information_serial_number[4:6], 16)
+        day = int(information_serial_number[6:8], 16)
+        return {'device_id': device_id, 'date': f"{year}-{month:02d}-{day:02d}"}
+
+    def decode_protocol_02(self, device_id, information_serial_number, error_check):
+        # Decodificação para o protocolo 02 (exemplo: temperatura em Celsius)
+        temperature_bytes = bytes.fromhex(information_serial_number)
+        temperature = struct.unpack('>h', temperature_bytes)[0] / 100.0
+        return {'device_id': device_id, 'temperature': temperature}
+
+    def decode_protocol_03(self, device_id, information_serial_number, error_check):
+        # Decodificação para o protocolo 03 (exemplo: string de 16 caracteres)
+        string_bytes = bytes.fromhex(information_serial_number)
+        string = string_bytes.decode('utf-8')
+        return {'device_id': device_id, 'string': string}   
+    def decode_protocol_04(self, buffer):
+        try
+
+    def decode_protocol_01(self, device_id, information_serial_number, error_check):
         decoded_message = (
-            f"Decodificação do Pacote do Dispositivo:\n"
-            f"Start Bit: {self.start_bit}\n"
-            f"Length: {self.length}\n"
-            f"Protocol Number: {self.protocol_number}\n"
-            f"Device Information: {self.device_info}\n"  # Ajustado aqui
-            f"Information Serial Number: {self.information_serial_number}\n"
-            f"Error Check: {self.error_check}\n"
-            f"End Bit: {self.end_bit}"
+            f"Decodificação do dispositivo:\n"
+            f"Device ID: {device_id}\n"
+            f"Information Serial Number: {information_serial_number}\n"
+            f"Error Check: {error_check}"
         )
         return decoded_message
 
-    def decode_detailed(self):
-        detailed_message = (
-            f"Decode 0x17\n"
-            f"Start Bit: {self.start_bit}\n"
-            f"Length: {self.length}\n"
-            f"Protocol Number: {self.protocol_number}\n"
-            
-            f"GPS Information:\n"
-            f"  Date Time: {self.date_time}\n"
-            f"  Quantity of GPS Satellites: {self.gps_quantity}\n"
-            f"  Latitude: {self.latitude}\n"
-            f"  Longitude: {self.longitude}\n"
-            f"  Speed: {self.speed}\n"
-            f"  Course and Status: {self.course_status}\n"
-            
-            f"LBS Information:\n"
-            f"  MCC: {self.mcc}\n"
-            f"  MNC: {self.mnc}\n"
-            f"  LAC: {self.lac}\n"
-            f"  Cell ID: {self.cell_id}\n"
-            
-            f"Status Information:\n"
-            f"  Device Information: {self.device_info}\n"
-            f"  Battery Voltage Level: {self.battery_voltage_level}\n"
-            f"  GSM Signal Strength: {self.gsm_signal_strength}\n"
-            f"  Battery Voltage: {self.battery_voltage}\n"
-            f"  External Voltage: {self.external_voltage}\n"
-            
-            f"Other Information:\n"
-            f"  Mileage: {self.mileage}\n"
-            f"  Hourmeter: {self.hourmeter}\n"
-            f"  Information Serial Number: {self.information_serial_number}\n"
-            f"  Error Check: {self.error_check}\n"
-            f"  End Bit: {self.end_bit}"
-        )
-        return detailed_message
-
-def handle_client(client_socket):
-    while True:
-        buffer = client_socket.recv(1024)
-        if not buffer:
-            break
-        
-        packet_type = buffer[0:1].hex()  # Identifica o tipo de pacote
-        
-        if packet_type == '01':
-            # Processa o pacote com device ID
-            print("Pacote com Device ID recebido")
-            # Aqui você deve implementar a lógica para processar o pacote com Device ID
-            # Exemplo fictício:
-            device_id = buffer[1:].hex()
-            print(f"Device ID: {device_id}")
-        elif packet_type == '02':
-            # Processa o pacote com informações detalhadas
-            packet = DevicePacket(buffer)
-            print("Mensagem Decodificada abaixo:")
-            print(packet.decode())
-            print("\nMensagem Decodificada abaixo:")
-            print(packet.decode_detailed())
-        else:
-            print(f"Tipo de pacote desconhecido: {packet_type}")
-
-    client_socket.close()
-
-
-def start_server(host='127.0.0.1', port=5050):
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
-    server.listen(5)
-    print(f"Servidor ouvindo na porta {port}")
-    
-    while True:
-        client_socket, addr = server.accept()
-        print(f"Conexão recebida de {addr}")
-        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
-        client_handler.start()
-
 if __name__ == "__main__":
-    start_server()
+    server = Server()
+    server.start()
