@@ -69,47 +69,10 @@ class Server:
             print(f"Error Check: {error_check}")
             print(f"End Bit: {end_bit}")
 
-            if decode_func:
-            response = decode_func(device_id, information_serial_number, error_check)   
-            else:
-            response = f"Protocolo desconhecido: {protocol_number}"
-
             return response
         
         except Exception as e:
             return f"Erro ao processar o pacote: {e}"
-        
-        
-    def decode_protocol_01(self, device_id, information_serial_number, error_check):
-        # Decodificação para o protocolo 01 (exemplo: data YYYYMMDD)
-        year = int(information_serial_number[:4], 16)
-        month = int(information_serial_number[4:6], 16)
-        day = int(information_serial_number[6:8], 16)
-        return {'device_id': device_id, 'date': f"{year}-{month:02d}-{day:02d}"}
-
-    def decode_protocol_02(self, device_id, information_serial_number, error_check):
-        # Decodificação para o protocolo 02 (exemplo: temperatura em Celsius)
-        temperature_bytes = bytes.fromhex(information_serial_number)
-        temperature = struct.unpack('>h', temperature_bytes)[0] / 100.0
-        return {'device_id': device_id, 'temperature': temperature}
-
-    def decode_protocol_03(self, device_id, information_serial_number, error_check):
-        # Decodificação para o protocolo 03 (exemplo: string de 16 caracteres)
-        string_bytes = bytes.fromhex(information_serial_number)
-        string = string_bytes.decode('utf-8')
-        return {'device_id': device_id, 'string': string}   
-    def decode_protocol_04(self, buffer):
-        try
-
-    def decode_protocol_01(self, device_id, information_serial_number, error_check):
-        decoded_message = (
-            f"Decodificação do dispositivo:\n"
-            f"Device ID: {device_id}\n"
-            f"Information Serial Number: {information_serial_number}\n"
-            f"Error Check: {error_check}"
-        )
-        return decoded_message
 
 if __name__ == "__main__":
     server = Server()
-    server.start()
