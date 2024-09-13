@@ -1,26 +1,14 @@
 import socket
 
 def identificar_pares_hexadecimal(pacote_hex):
-    """
-    Identifica a localização dos pares de start bit e end bit em um pacote hexadecimal,
-    e calcula o número de bytes que eles ocupam.
-    
-    Args:
-    pacote_hex (str): Pacote hexadecimal como uma string.
-    
-    Returns:
-    dict: Um dicionário contendo as posições e o número de bytes dos pares de start bit e end bit.
-    """
     start_bit = '7878'
     end_bit = '0d0a'
-    
-
     
     pos_start = pacote_hex.find(start_bit)
     print(f"Posição do start bit ('{start_bit}'): {pos_start}")
     
     if pos_start == -1:
-        return {'start_bit': '7878', 'pos_start_bit': 0, 'end_bit': 'N/A', 'pos_end_bit': 32}
+        return {'start_bit': '7878', 'pos_start_bit': 0, 'end_bit': '0D0A', 'pos_end_bit': 32}
     
     pos_end = pacote_hex.find(end_bit)
     print(f"Posição do end bit ('{end_bit}'): {pos_end}")
@@ -47,7 +35,7 @@ def main():
         s.bind((host, port))
         s.listen()
 
-        print(f"Servidor TCP ouvindo em {host}:{port}")
+        print(f"Servidor TCP ouvindo o host {host}: e o port {port}")
 
         while True:
             conn, addr = s.accept()
