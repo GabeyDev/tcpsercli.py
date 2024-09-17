@@ -1,23 +1,17 @@
-def parse_hex_strings(hex_string):
-    # Remove espaços e converte para minúsculas
-    hex_string = hex_string.lower().replace(" ", "")
+import socket
 
-    if len(hex_string) % 2 != 0:
-        print("Comprimento ímpar detectado. Adicionando um zero no início para corrigir.")
-        hex_string = '0' + hex_string
+def parse_hex_strings(hex_string):
+    hex_string = hex_string.lower().replace(" ", "")
     
-    try:
-        byte_array = bytearray.fromhex(hex_string)
-    except ValueError:
-        raise ValueError("Erro ao converter a string hex. Verifique se todos os caracteres são válidos.")
+    if len(hex_string) % 2 != 0:
+        raise ValueError("A string Hex tem que ter um número de dígitos específico")
+    
+    byte_array = bytearray.fromhex(hex_string)
     
     packet_length = byte_array[2]
-
-    if len(byte_array) < packet_length + 5:
-        print(f"Atenção: O pacote recebido é menor do que o esperado ({packet_length + 5} bytes), mas será processado.")
-    elif len(byte_array) > packet_length + 5:
-        print(f"Atenção: O pacote recebido é maior do que o esperado ({packet_length + 5} bytes), mas será processado.")
-
+    if len(byte_array) != packet_length + 5:
+        raise ValueError(f"Comprimento incorreto do pacote. Esperado {packet_length + 5} bytes, mas recebeu {len(byte_array)} bytes.")
+    
     protocol_number = byte_array[3]
     
     common_fields = {
@@ -37,18 +31,16 @@ def parse_hex_strings(hex_string):
         }
         
     elif protocol_number == 0x17:
-        gps_info = {
-            "Date Time": byte_array[4:10].hex(),
-            "Quantity of GPS satellites": f"0x{byte_array[10]:02X}",
-            "Latitude": byte_array[11:15].hex(),
-            "Longitude": byte_array[15:19].hex(),
-            "Speed": f"0x{byte_array[19]:02X}",
-            "Course Status": byte_array[20:22].hex(),
-        }
-        
         specific_fields = {
-            "GPS information": gps_info,
-            "LBS Information": {
+            "GPS information": {   
+                "Date Time": byte_array[4:10].hex(),
+                "Quantity of GPS satellites": f"0x{byte_array[10]:02X}",
+                "Latitude": byte_array[11:15].hex(),
+                "Longitude": byte_array[15:19].hex(),
+                "Speed": f"0x{byte_array[19]:02X}",
+                "Course Status": byte_array[20:22].hex()
+            },
+            "LBS Information": {            
                 "MCC": byte_array[22:24].hex(),
                 "MNC": f"0x{byte_array[24]:02X}",
                 "LAC": byte_array[25:27].hex(),
@@ -75,16 +67,30 @@ def parse_hex_strings(hex_string):
     common_fields.update(specific_fields)
     return common_fields
 
-def main():
-    while True:
-        hex_string = input("Cole o Pacote aqui (ou digite 'sair' para fechar o terminal): ").strip()
-        if hex_string.lower() == "sair":
-            break
-        try:
-            parsed_packet = parse_hex_strings(hex_string)
-            print("Pacote Analisado:", parsed_packet)
-        except ValueError as e:
-            print(f"Erro: {e}")
+def start_server(host='localhost', port=5050):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.bind((host, port))
+        server_socket.listen()
+
+        print(f"Servidor escutando em {host}:{port}")
+
+        while True:
+            conn, addr = server_socket.accept()
+            with conn:
+                print(f"Conexão estabelecida com {addr}")
+
+                data = conn.recv(1024)  # Recebe até 1024 bytes
+                if not data:
+                    break
+
+                hex_string = data.hex().upper()
+                print(f"Pacote recebido: {hex_string}")
+
+                try:
+                    parsed_packet = parse_hex_strings(hex_string)
+                    print("Pacote Analisado:", parsed_packet)
+                except ValueError as e:
+                    print(f"Erro: {e}")
 
 if __name__ == "__main__":
-    main()
+    start_server()
