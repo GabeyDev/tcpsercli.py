@@ -1,87 +1,90 @@
-import socket
-import threading
+def parse_hex_strings(hex_string):
+    # Remove espaços e converte para minúsculas
+    hex_string = hex_string.lower().replace(" ", "")
 
-class Server:
-    def __init__(self, host='127.0.0.1', port=5050):
-        self.host = host
-        self.port = port
-        self.server_socket = None
+    if len(hex_string) % 2 != 0:
+        print("Comprimento ímpar detectado. Adicionando um zero no início para corrigir.")
+        hex_string = '0' + hex_string
+    
+    try:
+        byte_array = bytearray.fromhex(hex_string)
+    except ValueError:
+        raise ValueError("Erro ao converter a string hex. Verifique se todos os caracteres são válidos.")
+    
+    packet_length = byte_array[2]
 
-    def start(self):
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen(5)
-        print(f"Servidor iniciado em {self.host}:{self.port}")
+    if len(byte_array) < packet_length + 5:
+        print(f"Atenção: O pacote recebido é menor do que o esperado ({packet_length + 5} bytes), mas será processado.")
+    elif len(byte_array) > packet_length + 5:
+        print(f"Atenção: O pacote recebido é maior do que o esperado ({packet_length + 5} bytes), mas será processado.")
 
-        while True:
-            client_socket, client_address = self.server_socket.accept()
-            print(f"Conexão estabelecida com {client_address}")
+    protocol_number = byte_array[3]
+    
+    common_fields = {
+        "Start bit": byte_array[:2].hex(),
+        "Packet Length": f"0x{packet_length:02X}",
+        "Protocol Number": f"0x{protocol_number:02X}",
+    }
+    
+    specific_fields = {}
+    
+    if protocol_number == 0x01:
+        specific_fields = {
+            "Device ID": byte_array[4:12].hex(),
+            "Serial Number": byte_array[12:14].hex(),
+            "Error Check": byte_array[14:16].hex(),
+            "End Bit": byte_array[16:18].hex()
+        }
+        
+    elif protocol_number == 0x17:
+        gps_info = {
+            "Date Time": byte_array[4:10].hex(),
+            "Quantity of GPS satellites": f"0x{byte_array[10]:02X}",
+            "Latitude": byte_array[11:15].hex(),
+            "Longitude": byte_array[15:19].hex(),
+            "Speed": f"0x{byte_array[19]:02X}",
+            "Course Status": byte_array[20:22].hex(),
+        }
+        
+        specific_fields = {
+            "GPS information": gps_info,
+            "LBS Information": {
+                "MCC": byte_array[22:24].hex(),
+                "MNC": f"0x{byte_array[24]:02X}",
+                "LAC": byte_array[25:27].hex(),
+                "Cell ID": byte_array[27:30].hex(),
+            },
+            "Status Information": {
+                "Device Information": f"0x{byte_array[30]:02X}",
+                "Battery Voltage Level": f"0x{byte_array[31]:02X}",
+                "GSM Signal Strength": f"0x{byte_array[32]:02X}",
+                "Battery Voltage": byte_array[33:35].hex(),
+                "External Voltage": byte_array[35:37].hex()
+            },
+            "Mileage": byte_array[37:41].hex(),
+            "Hourmeter": byte_array[41:45].hex(),
+            "Information Serial Number": byte_array[45:47].hex(),
+            "Error Check": byte_array[47:49].hex(),
+            "End Bit": byte_array[49:51].hex(),
+        }
+        
+    else:
+        raise ValueError(f"Pacote Desconhecido com Protocolo 0x{protocol_number:02X}. Suporta apenas pacotes 0x01 e 0x17.")
 
-            client_handler = threading.Thread(target=self.handle_client, args=(client_socket,))
-            client_handler.start()
+    # Combina campos comuns e específicos
+    common_fields.update(specific_fields)
+    return common_fields
 
-    def handle_client(self, client_socket):
-        buffer = bytearray()
-        while True:
-            try:
-                data = client_socket.recv(4096)
-                if not data:
-                    break
-
-                buffer.extend(data)
-
-                while len(buffer) >= 20: 
-                    response = self.process_packet(buffer)
-                    if response:
-                        client_socket.sendall(response.encode())
-            except Exception as e:
-                print(f"Erro ao lidar com o cliente: {e}")
-                break
-
-        client_socket.close()
-        print("Conexão fechada")
-
-    def process_packet(self, buffer):
+def main():
+    while True:
+        hex_string = input("Cole o Pacote aqui (ou digite 'sair' para fechar o terminal): ").strip()
+        if hex_string.lower() == "sair":
+            break
         try:
-            if len(buffer) < 20:
-                return
-
-            start_bit = buffer[:2].hex()
-            length = buffer[2:3].hex()
-            protocol_number = buffer[3:4].hex()
-            device_id = buffer[4:12].hex()
-            information_serial_number = buffer[12:14].hex()
-            error_check = buffer[14:16].hex()
-            end_bit = buffer[16:18].hex()
-
-            buffer.clear()
-
-            print(f"Start Bit: {start_bit}")
-            print(f"Length: {length}")
-            print(f"Protocol Number: {protocol_number}")
-            print(f"Device ID: {device_id}")
-            print(f"Information Serial Number: {information_serial_number}")
-            print(f"Error Check: {error_check}")
-            print(f"End Bit: {end_bit}")
-
-            if protocol_number == '01':
-                response = self.decode_protocol_01(device_id, information_serial_number, error_check)
-            else:
-                response = f"Protocolo desconhecido: {protocol_number}"
-
-            return response
-        except Exception as e:
-            return f"Erro ao processar o pacote: {e}"
-
-    def decode_protocol_01(self, device_id, information_serial_number, error_check):
-        decoded_message = (
-            f"Decodificação do dispositivo:\n"
-            f"Device ID: {device_id}\n"
-            f"Information Serial Number: {information_serial_number}\n"
-            f"Error Check: {error_check}"
-        )
-        return decoded_message
+            parsed_packet = parse_hex_strings(hex_string)
+            print("Pacote Analisado:", parsed_packet)
+        except ValueError as e:
+            print(f"Erro: {e}")
 
 if __name__ == "__main__":
-    server = Server()
-    server.start()
+    main()
