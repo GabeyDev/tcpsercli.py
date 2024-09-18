@@ -16,7 +16,7 @@ def parse_hex_strings(hex_string):
     
     common_fields = {
         "Start bit": byte_array[:2].hex().upper(),
-        "Packet Length": f"0x{packet_length:02X}",
+        "Packet Length": f"0x{packet_length:02X} ({packet_length} bytes)",
         "Protocol Number": f"0x{protocol_number:02X}",
     }
     
