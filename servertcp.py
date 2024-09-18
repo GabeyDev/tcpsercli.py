@@ -9,9 +9,9 @@ def parse_hex_strings(hex_string):
     byte_array = bytearray.fromhex(hex_string)
     
     packet_length = byte_array[2]
-    if len(byte_array) != packet_length + 5:
+    if len(byte_array) < packet_length + 5:
         raise ValueError(f"Comprimento incorreto do pacote. Esperado {packet_length + 5} bytes, mas recebeu {len(byte_array)} bytes.")
-    
+
     protocol_number = byte_array[3]
     
     common_fields = {
@@ -63,9 +63,10 @@ def parse_hex_strings(hex_string):
     else:
         raise ValueError(f"Pacote Desconhecido com Protocolo 0x{protocol_number:02X}. Suporta apenas pacotes 0x01 e 0x17.")
 
-    # Combina campos comuns e específicos
     common_fields.update(specific_fields)
     return common_fields
+
+
 
 def start_server(host='localhost', port=5050):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
@@ -76,21 +77,27 @@ def start_server(host='localhost', port=5050):
 
         while True:
             conn, addr = server_socket.accept()
-            with conn:
-                print(f"Conexão estabelecida com {addr}")
-
-                data = conn.recv(1024)  # Recebe até 1024 bytes
-                if not data:
-                    break
-
-                hex_string = data.hex().upper()
-                print(f"Pacote recebido: {hex_string}")
-
+            print(f"Conexão estabelecida com {addr}")
+            
+            while True:
                 try:
-                    parsed_packet = parse_hex_strings(hex_string)
-                    print("Pacote Analisado:", parsed_packet)
-                except ValueError as e:
-                    print(f"Erro: {e}")
+                    data = conn.recv(1024)
+                    if not data:
+                        print(f"Conexão encerrada por {addr}")
+                        break
+
+                    hex_string = data.hex().upper()
+                    print(f"Pacote recebido (em bytes): {len(data)}")
+
+                    try:
+                        parsed_packet = parse_hex_strings(hex_string)
+                        print("Pacote Analisado:", parsed_packet)
+                    except ValueError as e:
+                        print(f"Erro: {e}")
+
+                except ConnectionResetError:
+                    print(f"Conexão foi resetada por {addr}")
+                    break
 
 if __name__ == "__main__":
     start_server()
