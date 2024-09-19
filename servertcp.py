@@ -1,4 +1,12 @@
 import socket
+import logging
+import signal
+import sys
+
+def setup_logging():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+setup_logging()
 
 def parse_hex_strings(hex_string):
     hex_string = hex_string.lower().replace(" ", "")
@@ -15,58 +23,86 @@ def parse_hex_strings(hex_string):
     protocol_number = byte_array[3]
     
     common_fields = {
-        "Start bit": byte_array[:2].hex(),
-        "Packet Length": f"0x{packet_length:02X}",
+        "Start bit": byte_array[:2].hex().upper(),
+        "Packet Length": f"0x{packet_length:02X} ({packet_length} bytes)",
         "Protocol Number": f"0x{protocol_number:02X}",
     }
     
     specific_fields = {}
-    
+
     if protocol_number == 0x01:
-        specific_fields = {
-            "Device ID": byte_array[4:12].hex(),
-            "Serial Number": byte_array[12:14].hex(),
-            "Error Check": byte_array[14:16].hex(),
-            "End Bit": byte_array[16:18].hex()
-        }
-        
+        specific_fields = parse_protocol_01(byte_array)
     elif protocol_number == 0x17:
-        specific_fields = {
-            "GPS information": {   
-                "Date Time": byte_array[4:10].hex(),
-                "Quantity of GPS satellites": f"0x{byte_array[10]:02X}",
-                "Latitude": byte_array[11:15].hex(),
-                "Longitude": byte_array[15:19].hex(),
-                "Speed": f"0x{byte_array[19]:02X}",
-                "Course Status": byte_array[20:22].hex()
-            },
-            "LBS Information": {            
-                "MCC": byte_array[22:24].hex(),
-                "MNC": f"0x{byte_array[24]:02X}",
-                "LAC": byte_array[25:27].hex(),
-                "Cell ID": byte_array[27:30].hex(),
-            },
-            "Status Information": {
-                "Device Information": f"0x{byte_array[30]:02X}",
-                "Battery Voltage Level": f"0x{byte_array[31]:02X}",
-                "GSM Signal Strength": f"0x{byte_array[32]:02X}",
-                "Battery Voltage": byte_array[33:35].hex(),
-                "External Voltage": byte_array[35:37].hex()
-            },
-            "Mileage": byte_array[37:41].hex(),
-            "Hourmeter": byte_array[41:45].hex(),
-            "Information Serial Number": byte_array[45:47].hex(),
-            "Error Check": byte_array[47:49].hex(),
-            "End Bit": byte_array[49:51].hex(),
-        }
-        
+        specific_fields = parse_protocol_17(byte_array)
     else:
         raise ValueError(f"Pacote Desconhecido com Protocolo 0x{protocol_number:02X}. Suporta apenas pacotes 0x01 e 0x17.")
 
     common_fields.update(specific_fields)
     return common_fields
 
+def translate_protocol_01(byte_array):
+    device_id = byte_array[4:12].hex().upper()
+    serial_number = byte_array[12:14].hex().upper()
+    error_check = byte_array[14:16].hex().upper()
+    end_bit = byte_array[16:18].hex().upper()
 
+    translated_data = {
+        "Device ID": f"{device_id[:2]}:{device_id[2:4]}:{device_id[4:6]}:{device_id[6:8]}:{device_id[8:10]}:{device_id[10:12]}",
+        "Serial Number": f"0x{serial_number}",
+        "Error Check": f"0x{error_check}",
+        "End Bit": f"0x{end_bit}",
+    }
+    
+    return translated_data
+
+def parse_protocol_01(byte_array):
+    return translate_protocol_01(byte_array)
+
+def parse_protocol_17(byte_array):
+    specific_fields = {
+        "GPS Information": {   
+            "Date Time": byte_array[4:10].hex().upper(),
+            "Quantity of GPS satellites": f"0x{byte_array[10]:02X}",
+            "Latitude": byte_array[11:15].hex().upper(),
+            "Longitude": byte_array[15:19].hex().upper(),
+            "Speed": f"0x{byte_array[19]:02X}",
+            "Course Status": byte_array[20:22].hex().upper()
+        },
+        "LBS Information": {            
+            "MCC": byte_array[22:24].hex().upper(),
+            "MNC": f"0x{byte_array[24]:02X}",
+            "LAC": byte_array[25:27].hex().upper(),
+            "Cell ID": byte_array[27:30].hex().upper(),
+        },
+        "Status Information": {
+            "Device Information": f"0x{byte_array[30]:02X}",
+            "Battery Voltage Level": f"0x{byte_array[31]:02X}",
+            "GSM Signal Strength": f"0x{byte_array[32]:02X}",
+            "Battery Voltage": byte_array[33:35].hex().upper(),
+            "External Voltage": byte_array[35:37].hex().upper()
+        },
+        "Mileage": byte_array[37:41].hex().upper(),
+        "Hourmeter": byte_array[41:45].hex().upper(),
+        "Information Serial Number": byte_array[45:47].hex().upper(),
+        "Error Check": byte_array[47:49].hex().upper(),
+        "End Bit": byte_array[49:51].hex().upper(),
+    }
+    return specific_fields
+
+def is_valid_hex_string(hex_string):
+    return all(c in '0123456789abcdef' for c in hex_string.lower())
+
+def handle_error(e, addr):
+    logging.error(f"Erro de conexão com {addr}: {e}")
+
+def send_response(conn, message):
+    conn.sendall(message.encode('utf-8'))
+
+def signal_handler(sig, frame):
+    print("Interrompendo o servidor...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 def start_server(host='localhost', port=5050):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
@@ -87,13 +123,18 @@ def start_server(host='localhost', port=5050):
                         break
 
                     hex_string = data.hex().upper()
+                    if not is_valid_hex_string(hex_string):
+                        handle_error(ValueError("Hex string inválido"), addr)
+                        continue
+
                     print(f"Pacote recebido (em bytes): {len(data)}")
 
                     try:
                         parsed_packet = parse_hex_strings(hex_string)
                         print("Pacote Analisado:", parsed_packet)
+                        send_response(conn, "Pacote processado com sucesso.")
                     except ValueError as e:
-                        print(f"Erro: {e}")
+                        handle_error(e, addr)
 
                 except ConnectionResetError:
                     print(f"Conexão foi resetada por {addr}")
