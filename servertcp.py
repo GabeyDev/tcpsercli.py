@@ -68,9 +68,8 @@ def bytes_to_latitude(byte_value):
     scaled_value = integer_value / 30000
     latitude_decimal = scaled_value / 60
 
-    # Verifica se a latitude é sul (por exemplo, se um bit específico indicar isso)
-    if byte_value[0] & 0x80:  # Exemplo: bit de sinal no primeiro byte
-        latitude_decimal *= -1  # Multiplica por -1 se for sul
+    if byte_value[0] & 0x80: 
+        latitude_decimal *= -1 
 
     return latitude_decimal
 
@@ -80,18 +79,82 @@ def bytes_to_longitude(byte_value):
     scaled_value = integer_value / 30000
     longitude_decimal = scaled_value / 60
 
-    # Verifica se a longitude é oeste (por exemplo, se um bit específico indicar isso)
-    if byte_value[0] & 0x80:  # Exemplo: bit de sinal no primeiro byte
-        longitude_decimal *= -1  # Multiplica por -1 se for oeste
-
+    if byte_value[0] & 0x80: 
+        longitude_decimal *= -1 
+        
     return longitude_decimal
+
+def parse_course_status(course_status_bytes):
+    course_status = int.from_bytes(course_status_bytes, byteorder='big')
+
+    reserved = (course_status >> 7) & 1
+    din_status = (course_status >> 6) & 1
+    gps_positioning_type = (course_status >> 5) & 1 
+    gps_positioned = (course_status >> 4) & 1  
+    longitude_direction = 'East' if (course_status >> 3) & 1 == 0 else 'West'
+    latitude_direction = 'North' if (course_status >> 2) & 1 == 0 else 'South'
+
+    course = course_status & 0x03
+
+    return {
+        "Reserved": reserved,
+        "Din Status": din_status,
+        "GPS Positioning Type": 'Real-time' if gps_positioning_type == 0 else 'Differential',
+        "GPS Positioned": 'Not Positioned' if gps_positioned == 0 else 'Positioned',
+        "Longitude Direction": longitude_direction,
+        "Latitude Direction": latitude_direction,
+        "Course": course
+    }
+
+
+# Mapeamento de MCC para países
+mcc_country_mapping = {
+    "724": "Brasil",
+    "310": "Estados Unidos",
+    "234": "Reino Unido",
+    "460": "China",
+    # Adicione mais MCCs conforme necessário
+}
+
+# Mapeamento de MCC + MNC para operadoras
+mnc_mapping = {
+    "724": {  # Brasil
+        "02": "TIM",
+        "03": "Claro",
+        "04": "Vivo",
+        "10": "Oi"
+    },
+    "310": {  # Estados Unidos
+        "260": "T-Mobile",
+        "410": "AT&T",
+        "150": "Verizon"
+    },
+    "234": {  # Reino Unido
+        "10": "O2",
+        "15": "Vodafone",
+        "30": "EE"
+    },
+    # Adicione mais MNCs conforme necessário
+}
+
+def get_country_from_mcc(mcc):
+    """Retorna o país associado ao MCC."""
+    mcc_str = str(mcc)
+    return mcc_country_mapping.get(mcc_str, "País Desconhecido")
+
+def get_operator_from_mcc_mnc(mcc, mnc):
+    """Retorna a operadora associada ao MCC + MNC."""
+    mcc_str = str(mcc)
+    mnc_str = f"{mnc:02X}"  # Converte o MNC para string hexadecimal com dois dígitos
+    if mcc_str in mnc_mapping:
+        return mnc_mapping[mcc_str].get(mnc_str, "Operadora Desconhecida")
+    return "Operadora Desconhecida"
 
 
 def extract_protocol_17_fields(byte_array):
     date_time = byte_array[4:10]
     formatted_date_time = translate_date_time(date_time)
 
-    # Cálculo da Latitude e Longitude usando as novas funções
     latitude = bytes_to_latitude(byte_array[11:15])
     longitude = bytes_to_longitude(byte_array[15:19])
 
@@ -102,12 +165,12 @@ def extract_protocol_17_fields(byte_array):
             "Latitude": latitude,
             "Longitude": longitude,
             "Speed": f"{int.from_bytes(byte_array[19:21], byteorder='big')} km/h",
-            "Course Status": byte_array[20:22].hex().upper()
+            "Course Status": parse_course_status(byte_array[20:22])
         },
         "LBS Information": {            
-            "MCC": byte_array[22:24].hex().upper(),
+            "MCC": int.from_bytes(byte_array[22:24], byteorder='big'),
             "MNC": byte_array[24],
-            "LAC": byte_array[25:27].hex().upper(),
+            "LAC": int.from_bytes(byte_array[25:27], byteorder='big'),  # Decodificação correta do LAC
             "Cell ID": byte_array[27:30].hex().upper(),
         },
         "Status Information": {
@@ -125,8 +188,10 @@ def extract_protocol_17_fields(byte_array):
     }
     return specific_fields
 
+
+
 def translate_date_time(byte_array):
-    year = byte_array[0] % 100  # Mantém apenas os últimos dois dígitos
+    year = byte_array[0] % 100
     month = byte_array[1]
     day = byte_array[2]
     hour = byte_array[3]
@@ -134,7 +199,6 @@ def translate_date_time(byte_array):
     second = byte_array[5]
     
     return f"{year:02d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
-
 
 
 
