@@ -67,6 +67,11 @@ def bytes_to_latitude(byte_value):
     integer_value = int.from_bytes(byte_value, byteorder='big')
     scaled_value = integer_value / 30000
     latitude_decimal = scaled_value / 60
+
+    # Verifica se a latitude é sul (por exemplo, se um bit específico indicar isso)
+    if byte_value[0] & 0x80:  # Exemplo: bit de sinal no primeiro byte
+        latitude_decimal *= -1  # Multiplica por -1 se for sul
+
     return latitude_decimal
 
 def bytes_to_longitude(byte_value):
@@ -74,7 +79,13 @@ def bytes_to_longitude(byte_value):
     integer_value = int.from_bytes(byte_value, byteorder='big')
     scaled_value = integer_value / 30000
     longitude_decimal = scaled_value / 60
+
+    # Verifica se a longitude é oeste (por exemplo, se um bit específico indicar isso)
+    if byte_value[0] & 0x80:  # Exemplo: bit de sinal no primeiro byte
+        longitude_decimal *= -1  # Multiplica por -1 se for oeste
+
     return longitude_decimal
+
 
 def extract_protocol_17_fields(byte_array):
     date_time = byte_array[4:10]
