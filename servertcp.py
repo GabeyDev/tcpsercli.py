@@ -170,15 +170,15 @@ def extract_protocol_17_fields(byte_array):
         "LBS Information": {            
             "MCC": int.from_bytes(byte_array[22:24], byteorder='big'),
             "MNC": byte_array[24],
-            "LAC": int.from_bytes(byte_array[25:27], byteorder='big'),  # Decodificação correta do LAC
-            "Cell ID": byte_array[27:30].hex().upper(),
+            "LAC": int.from_bytes(byte_array[25:27], byteorder='big'),
+            "Cell ID": int.from_bytes(byte_array[27:30], byteorder='big'),
         },
         "Status Information": {
-            "Device Information": byte_array[30],
+            "Device Status": "Active" if byte_array[30] & 0x01 else "Inactive",  # Exemplo de status do dispositivo
             "Battery Voltage Level": byte_array[31],
             "GSM Signal Strength": byte_array[32],
             "Battery Voltage": byte_array[33:35].hex().upper(),
-            "External Voltage": byte_array[35:37].hex().upper()
+            "External Voltage": byte_array[35:37].hex().upper(),
         },
         "Mileage": byte_array[37:41].hex().upper(),
         "Hourmeter": byte_array[41:45].hex().upper(),
@@ -187,6 +187,8 @@ def extract_protocol_17_fields(byte_array):
         "End Bit": byte_array[49:51].hex().upper(),
     }
     return specific_fields
+
+
 
 
 
