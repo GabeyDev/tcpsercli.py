@@ -16,11 +16,10 @@ def parse_hex_strings(hex_string):
     
     byte_array = bytearray.fromhex(hex_string)
     
-    # Modificando para calcular o comprimento total do pacote de forma flexível
-    packet_length = byte_array[2] + 5  # Start bit (2) + Length (1) + Protocol Number (1) + Dados + Error Check (2) + End Bit (2)
+    packet_length = int(byte_array[2])
     
-    if len(byte_array) < packet_length:
-        raise ValueError(f"Comprimento incorreto do pacote. Esperado {packet_length} bytes, mas recebeu {len(byte_array)} bytes.")
+    if len(byte_array) < packet_length + 5:
+        raise ValueError(f"Comprimento incorreto do pacote. Esperado {packet_length + 5} bytes, mas recebeu {len(byte_array)} bytes.")
 
     protocol_number = byte_array[3]
     
@@ -29,13 +28,13 @@ def parse_hex_strings(hex_string):
         "Packet Length": f"{packet_length} bytes",
         "Protocol Number": f"{protocol_number:02X}",
     }
-  
+
     specific_fields = {}
 
     if protocol_number == 0x01:
-        specific_fields = extract_protocol_fields(byte_array, 0x01)
+        specific_fields = extract_protocol_01_fields(byte_array)
     elif protocol_number == 0x17:
-        specific_fields = extract_protocol_fields(byte_array, 0x17)
+        specific_fields = extract_protocol_17_fields(byte_array)
     else:
         raise ValueError(f"Pacote Desconhecido com Protocolo {protocol_number}. Suporta apenas pacotes 0x01 e 0x17.")
 
@@ -45,116 +44,20 @@ def parse_hex_strings(hex_string):
 def translate_to_ascii(byte_array):
     return byte_array.hex().upper()
 
-def extract_protocol_fields(byte_array, protocol_number):
-    if protocol_number == 0x01:
-        return extract_protocol_01_fields(byte_array)
-    elif protocol_number == 0x17:
-        return extract_protocol_17_fields(byte_array)
-    else:
-        raise ValueError("Protocolo não suportado.")
-
 def extract_protocol_01_fields(byte_array):
     device_id = byte_array[4:12].hex().upper()
     information_serial_number = int.from_bytes(byte_array[12:14], byteorder='big')
     error_check = int.from_bytes(byte_array[14:16], byteorder='big')
     end_bit = byte_array[16:18].hex().upper()
 
-    return {
+    translated_data = {
         "Device ID": f"{device_id[:2]}:{device_id[2:4]}:{device_id[4:6]}:{device_id[6:8]}:{device_id[8:10]}:{device_id[10:12]}",
         "Information Serial Number": information_serial_number,
         "Error Check": error_check,
         "End Bit": end_bit,
     }
-
-def extract_protocol_17_fields(byte_array):
-    current_offset = 4
-
-    date_time = byte_array[current_offset:current_offset + 6]
-    formatted_date_time = translate_date_time(date_time)
-    current_offset += 6
-
-    quantity_of_gps_sats = byte_array[current_offset]
-    current_offset += 1
-
-    latitude = bytes_to_latitude(byte_array[current_offset:current_offset + 4])
-    current_offset += 4
-
-    longitude = bytes_to_longitude(byte_array[current_offset:current_offset + 4])
-    current_offset += 4
-
-    speed = int.from_bytes(byte_array[current_offset:current_offset + 2], byteorder='big')
-    current_offset += 2
-
-    course_status = parse_course_status(byte_array[current_offset:current_offset + 2])
-    current_offset += 2
-
-    mcc = int.from_bytes(byte_array[current_offset:current_offset + 2], byteorder='big')
-    current_offset += 2
-
-    mnc = byte_array[current_offset]
-    current_offset += 1
-
-    lac = int.from_bytes(byte_array[current_offset:current_offset + 2], byteorder='big')
-    current_offset += 2
-
-    cell_id = int.from_bytes(byte_array[current_offset:current_offset + 3], byteorder='big')
-    current_offset += 3
-
-    status_info = byte_array[current_offset:current_offset + 5]
-    current_offset += 5
-
-    mileage = int.from_bytes(byte_array[current_offset:current_offset + 4], byteorder='big', signed=False)
-    current_offset += 4
-
-    hourmeter = int.from_bytes(byte_array[current_offset:current_offset + 4], byteorder='big', signed=False)
-    current_offset += 4
-
-    information_serial_number = int.from_bytes(byte_array[current_offset:current_offset + 2], byteorder='big', signed=False)
-    current_offset += 2
-
-    error_check = int.from_bytes(byte_array[current_offset:current_offset + 2], byteorder='big', signed=False)
-    current_offset += 2
-
-    end_bit = byte_array[current_offset:current_offset + 2].hex().upper()
-
-    return {
-        "GPS Information": {
-            "Date Time": formatted_date_time,
-            "Quantity of GPS Satellites": quantity_of_gps_sats,
-            "Latitude": latitude,
-            "Longitude": longitude,
-            "Speed": f"{speed} km/h",
-            "Course Status": course_status
-        },
-        "LBS Information": {
-            "MCC": f"{mcc} - {get_country_from_mcc(mcc)}",
-            "MNC": f"{mnc} - {get_operator_from_mcc_mnc(mcc, mnc)}",
-            "LAC": lac,
-            "Cell ID": cell_id,
-        },
-        "Status Information": {
-            "Device Status": "Active" if status_info[0] & 0x01 else "Inactive",
-            "Battery Voltage Level": parse_battery_voltage_level(status_info[1:2]),
-            "GSM Signal Strength": parse_gsm_signal_strength(status_info[2]),
-            "Battery Voltage": parse_battery_voltage(status_info[3:5]),
-            "External Voltage": parse_external_voltage(status_info[5:7]),
-        },
-        "Mileage": f"{mileage} m",
-        "Hourmeter": parse_hourmeter(byte_array[current_offset-4:current_offset]),
-        "Information Serial Number": information_serial_number,
-        "Error Check": error_check,
-        "End Bit": end_bit,
-    }
-
-def translate_date_time(byte_array):
-    year = byte_array[0] + 2000
-    month = byte_array[1]
-    day = byte_array[2]
-    hour = byte_array[3]
-    minute = byte_array[4]
-    second = byte_array[5]
     
-    return f"{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}"
+    return translated_data
 
 def bytes_to_latitude(byte_value):
     integer_value = int.from_bytes(byte_value, byteorder='big')
@@ -176,119 +79,184 @@ def bytes_to_longitude(byte_value):
         
     return longitude_decimal
 
-def parse_course_status(byte_array):
-    reserved = (byte_array[0] >> 7) & 0x01
-    din_status = (byte_array[0] >> 6) & 0x01
-    gps_real_time = (byte_array[0] >> 5) & 0x01
-    gps_positioned = (byte_array[0] >> 4) & 0x01
-    east_longitude = (byte_array[0] >> 3) & 0x01
-    south_latitude = (byte_array[0] >> 2) & 0x01
-    course = byte_array[1]
+def parse_course_status(course_status_bytes):
+    course_status = int.from_bytes(course_status_bytes, byteorder='big')
+
+    reserved = (course_status >> 7) & 1
+    din_status = (course_status >> 6) & 1
+    gps_positioning_type = (course_status >> 5) & 1 
+    gps_positioned = (course_status >> 4) & 1  
+    longitude_direction = 'East' if (course_status >> 3) & 1 == 0 else 'West'
+    latitude_direction = 'North' if (course_status >> 2) & 1 == 0 else 'South'
+
+    course = course_status & 0x03
 
     return {
         "Reserved": reserved,
         "Din Status": din_status,
-        "GPS Real-Time": gps_real_time,
-        "GPS Positioned": gps_positioned,
-        "East Longitude": east_longitude,
-        "South Latitude": south_latitude,
+        "GPS Positioning Type": 'Real-time' if gps_positioning_type == 0 else 'Differential',
+        "GPS Positioned": 'Not Positioned' if gps_positioned == 0 else 'Positioned',
+        "Longitude Direction": longitude_direction,
+        "Latitude Direction": latitude_direction,
         "Course": course
     }
 
-def parse_mcc(mcc_bytes):
-    mcc_value = int.from_bytes(mcc_bytes, byteorder='big')
-    return mcc_value
+# Mapeamento de MCC para países
+mcc_country_mapping = {
+    "724": "Brasil",
+    "310": "Estados Unidos",
+    "234": "Reino Unido",
+    "460": "China",
+}
+
+# Mapeamento de MNC para operadoras
+mnc_mapping = {
+    "724": {  # Brasil
+        "02": "TIM",
+        "03": "Claro",
+        "04": "Vivo",
+        "10": "Oi"
+    },
+    "310": {  # Estados Unidos
+        "260": "T-Mobile",
+        "410": "AT&T",
+        "150": "Verizon"
+    },
+    "234": {  # Reino Unido
+        "10": "O2",
+        "15": "Vodafone",
+        "30": "EE"
+    },
+}
 
 def get_country_from_mcc(mcc):
-    mcc_table = {
-        724: "Turquia",
-        356: "Índia",
-    }
-    return mcc_table.get(mcc, "Código MCC não encontrado")
+    mcc_str = str(mcc)
+    return mcc_country_mapping.get(mcc_str, "País Desconhecido")
 
 def get_operator_from_mcc_mnc(mcc, mnc):
-    operator_mapping = {
-        (724, 1): "NOS",      
-        (724, 2): "Vodafone", 
-        (276, 1): "T-Mobile", 
-        (310, 26): "AT&T",
+    mcc_str = str(mcc)
+    mnc_str = f"{mnc:02X}"
+    if mcc_str in mnc_mapping:
+        return mnc_mapping[mcc_str].get(mnc_str, "Operadora Desconhecida")
+    return "Operadora Desconhecida"
+
+def interpret_battery_voltage(level):
+    """Interpreta o nível de voltagem da bateria de acordo com a descrição fornecida."""
+    if level == 0:
+        return "Lowest power and power off"
+    elif level == 1:
+        return "Not enough power to dial a call or send messages."
+    elif level == 2:
+        return "Low power and alarm"
+    elif level == 3:
+        return "Lower power but can work normally"
+    elif 3 < level <= 6:
+        return "Work in good condition"
+    else:
+        return "Unknown battery level"
+
+def extract_protocol_17_fields(byte_array):
+    date_time = byte_array[4:10]
+    formatted_date_time = translate_date_time(date_time)
+
+    latitude = bytes_to_latitude(byte_array[11:15])
+    longitude = bytes_to_longitude(byte_array[15:19])
+
+    mcc = int.from_bytes(byte_array[22:24], byteorder='big')
+    mnc = byte_array[24]
+
+    battery_voltage_level = byte_array[31]
+    battery_voltage_value = battery_voltage_level / 100  # Ajustar para exibir em volts
+    battery_voltage_description = interpret_battery_voltage(battery_voltage_level)
+
+    specific_fields = {
+        "GPS Information": {   
+            "Date Time": formatted_date_time,
+            "Quantity of GPS Satellites": byte_array[10],
+            "Latitude": latitude,
+            "Longitude": longitude,
+            "Speed": f"{int.from_bytes(byte_array[19:21], byteorder='big')} km/h",
+            "Course Status": parse_course_status(byte_array[20:22])
+        },
+        "LBS Information": {            
+            "MCC": mcc,
+            "Country": get_country_from_mcc(mcc),
+            "MNC": mnc,
+            "Operator": get_operator_from_mcc_mnc(mcc, mnc),
+            "LAC": int.from_bytes(byte_array[25:27], byteorder='big'),
+            "Cell ID": int.from_bytes(byte_array[27:30], byteorder='big'),
+        },
+        "Status Information": {
+            "Device Status": "Active" if byte_array[30] & 0x01 else "Inactive",  # Exemplo de status do dispositivo
+            "Battery Voltage Level": f"{battery_voltage_value:.2f}V - {battery_voltage_description}",  # Exibir valor em volts
+            "GSM Signal Strength": f"{byte_array[32]}%",  # Exibir a força do sinal em porcentagem
+            "Battery Voltage": byte_array[33:35].hex().upper(),
+            "External Voltage": byte_array[35:37].hex().upper(),
+        },
+        "Mileage": byte_array[37:41].hex().upper(),
+        "Hourmeter": byte_array[41:45].hex().upper(),
+        "Information Serial Number": byte_array[45:47].hex().upper(),
+        "Error Check": byte_array[47:49].hex().upper(),
+        "End Bit": byte_array[49:51].hex().upper(),
     }
-    return operator_mapping.get((mcc, mnc), "Desconhecido")
-
-def parse_battery_voltage_level(byte_array):
-    level = byte_array[0]
-    return {
-        0: "Menor energia e desligado",
-        1: "Energia insuficiente para chamadas ou mensagens",
-        2: "Baixa energia e alarme",
-        3: "Baixa energia, mas funciona normalmente",
-        4: "Boa condição",
-        5: "Excelente condição",
-    }.get(level, "Desconhecido")
-
-def parse_gsm_signal_strength(signal_strength):
-    return (signal_strength / 2) * 100
-
-def parse_battery_voltage(byte_array):
-    return int.from_bytes(byte_array, byteorder='big') / 1000
-
-def parse_external_voltage(byte_array):
-    return int.from_bytes(byte_array, byteorder='big') / 1000
-
-def receive_data(byte_array):
-    hourmeter_start_index = ()
-    hourmeter_end_index = hourmeter_start_index + 4
-
-    hourmeter_bytes = byte_array[hourmeter_start_index:hourmeter_end_index]
-
-    if len(hourmeter_bytes) < 4:
-        print("Erro: Dados do hourmeter não estão completos.")
-        return
-
-    print(f"Bytes do hourmeter recebidos: {hourmeter_bytes.hex()}")
-
-    total_seconds = int.from_bytes(hourmeter_bytes, byteorder='big')
-    print(f"Valor do hourmeter em segundos: {total_seconds}")
-
-    formatted_hourmeter = parse_hourmeter(hourmeter_bytes)
-    print(formatted_hourmeter)
-
-
-def parse_hourmeter(byte_array):
-    total_seconds = int.from_bytes(byte_array, byteorder='big')
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    return f"{hours}h {minutes}m {seconds}s"
+    return specific_fields
 
 
 
-def main():
-    signal.signal(signal.SIGINT, signal_handler)
-    host = '0.0.0.0'
-    port = 5050
+def translate_date_time(byte_array):
+    year = byte_array[0] % 100
+    month = byte_array[1]
+    day = byte_array[2]
+    hour = byte_array[3]
+    minute = byte_array[4]
+    second = byte_array[5]
+    
+    return f"{year:02d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((host, port))
-        s.listen()
-        logging.info(f"Servidor TCP em execução em {host}:{port}")
 
-        while True:
-            conn, addr = s.accept()
-            with conn:
-                logging.info(f"Conexão recebida de {addr}")
-                data = conn.recv(1024)
-                if data:
-                    try:
-                        logging.info("Recebido: %s", data.hex().upper())
-                        result = parse_hex_strings(data.hex())
-                        logging.info("Resultado: %s", result)
-                    except ValueError as e:
-                        logging.error("Erro ao processar dados: %s", e)
+def handle_error(e, addr):
+    logging.error(f"Erro de conexão com {addr}: {e}")
+
+def send_response(conn, message):
+    conn.sendall(message.encode('utf-8'))
 
 def signal_handler(sig, frame):
-    logging.info("Encerrando o servidor...")
+    print("Interrompendo o servidor...")
     sys.exit(0)
 
+signal.signal(signal.SIGINT, signal_handler)
+
+def start_server(host='localhost', port=5050):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.bind((host, port))
+        server_socket.listen()
+
+        print(f"Servidor escutando em {host}:{port}")
+
+        while True:
+            conn, addr = server_socket.accept()
+            print(f"Conexão estabelecida com {addr}")
+            
+            while True:
+                try:
+                    data = conn.recv(1024)
+                    if not data:
+                        print(f"Conexão encerrada por {addr}")
+                        break
+
+                    hex_string = data.hex().upper()
+
+                    print(f"Pacote recebido (em bytes): {len(data)}")
+
+                    try:
+                        parsed_packet = parse_hex_strings(hex_string)
+                        print("Pacote Analisado:", parsed_packet)
+                        send_response(conn, "Pacote processado com sucesso.")
+                    except Exception as e:
+                        handle_error(e, addr)
+                        send_response(conn, f"Erro ao processar pacote: {str(e)}")
+                except Exception as e:
+                    handle_error(e, addr)
+
 if __name__ == "__main__":
-    main()
+    start_server()
