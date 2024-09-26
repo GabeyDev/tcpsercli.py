@@ -94,8 +94,8 @@ def parse_course_status(course_status_bytes):
     return {
         "Reserved": reserved,
         "Din Status": din_status,
-        "GPS Positioning Type": 'Real-time' if gps_positioning_type == 0 else 'Differential',
-        "GPS Positioned": 'Not Positioned' if gps_positioned == 0 else 'Positioned',
+        "GPS Positioning Type": 'Tempo-Real' if gps_positioning_type == 0 else 'Diferencial',
+        "GPS Positioned": 'Não Posicionado' if gps_positioned == 0 else 'Posicionado',
         "Longitude Direction": longitude_direction,
         "Latitude Direction": latitude_direction,
         "Course": course
@@ -155,6 +155,22 @@ def interpret_battery_voltage(level):
     else:
         return "Unknown battery level"
 
+def external_voltage_to_bytes(voltage):
+    voltage_int = int(voltage * 100)
+
+    if voltage_int > 65535:
+        voltage_int = 65535
+
+    return voltage_int.to_bytes(2, byteorder='big')
+
+import datetime
+
+def seconds_to_hms(seconds):
+    """Converte o tempo acumulado em segundos para o formato de horas, minutos e segundos."""
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours}h {minutes}m {seconds}s"
+
 def extract_protocol_17_fields(byte_array):
     date_time = byte_array[4:10]
     formatted_date_time = translate_date_time(date_time)
@@ -166,9 +182,23 @@ def extract_protocol_17_fields(byte_array):
     mnc = byte_array[24]
 
     battery_voltage_level = byte_array[31]
-    battery_voltage_value = battery_voltage_level / 100  # Ajustar para exibir em volts
     battery_voltage_description = interpret_battery_voltage(battery_voltage_level)
 
+    battery_voltage_raw = int.from_bytes(byte_array[33:35], byteorder='big')
+    battery_voltage_value = battery_voltage_raw / 100 
+
+    external_voltage_raw = int.from_bytes(byte_array[35:37], byteorder='big')
+    external_voltage_value = external_voltage_raw / 100
+
+    mileage = int.from_bytes(byte_array[37:41], byteorder='big', signed=False)
+
+    hourmeter_seconds = int.from_bytes(byte_array[41:45], byteorder='big', signed=False)
+    hourmeter_formatted = seconds_to_hms(hourmeter_seconds)
+
+    information_serial_number = int.from_bytes(byte_array[45:47], byteorder='big', signed=False)
+
+    error_check = byte_array[47:49].hex().upper()
+    
     specific_fields = {
         "GPS Information": {   
             "Date Time": formatted_date_time,
@@ -187,21 +217,18 @@ def extract_protocol_17_fields(byte_array):
             "Cell ID": int.from_bytes(byte_array[27:30], byteorder='big'),
         },
         "Status Information": {
-            "Device Status": "Active" if byte_array[30] & 0x01 else "Inactive",  # Exemplo de status do dispositivo
-            "Battery Voltage Level": f"{battery_voltage_value:.2f}V - {battery_voltage_description}",  # Exibir valor em volts
-            "GSM Signal Strength": f"{byte_array[32]}%",  # Exibir a força do sinal em porcentagem
-            "Battery Voltage": byte_array[33:35].hex().upper(),
-            "External Voltage": byte_array[35:37].hex().upper(),
+            "Device Status": "Active" if byte_array[30] & 0x01 else "Inactive",
+            "Battery Voltage Level": f"{battery_voltage_level} - {battery_voltage_description}",
+            "GSM Signal Strength": f"{byte_array[32]}%", 
+            "Battery Voltage": f"{battery_voltage_value:.2f}V",
+            "External Voltage": f"{external_voltage_value:.2f}V",
         },
-        "Mileage": byte_array[37:41].hex().upper(),
-        "Hourmeter": byte_array[41:45].hex().upper(),
-        "Information Serial Number": byte_array[45:47].hex().upper(),
-        "Error Check": byte_array[47:49].hex().upper(),
+        "Mileage": f"{mileage} meters",
+        "Hourmeter": hourmeter_formatted,
+        "Information Serial Number": information_serial_number,
         "End Bit": byte_array[49:51].hex().upper(),
     }
     return specific_fields
-
-
 
 def translate_date_time(byte_array):
     year = byte_array[0] % 100
@@ -212,7 +239,6 @@ def translate_date_time(byte_array):
     second = byte_array[5]
     
     return f"{year:02d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
-
 
 def handle_error(e, addr):
     logging.error(f"Erro de conexão com {addr}: {e}")
