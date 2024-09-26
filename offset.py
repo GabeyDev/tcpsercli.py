@@ -41,10 +41,18 @@ def parse_hex_strings(hex_string):
     common_fields.update(specific_fields)
     return common_fields
 
+def validate_packet_content(byte_array):
+    if not all(0 <= byte <= 255 for byte in byte_array):
+        raise ValueError("Conteúdo do pacote contém bytes fora do intervalo esperado (0-255).")
+
+
 def translate_to_ascii(byte_array):
     return byte_array.hex().upper()
 
 def extract_protocol_01_fields(byte_array):
+    if len(byte_array) < 18:
+        raise ValueError("Pacote muito curto para o protocolo 0x01.")
+    
     device_id = byte_array[4:12].hex().upper()
     information_serial_number = int.from_bytes(byte_array[12:14], byteorder='big')
     error_check = int.from_bytes(byte_array[14:16], byteorder='big')
@@ -78,6 +86,13 @@ def bytes_to_longitude(byte_value):
         longitude_decimal *= -1 
         
     return longitude_decimal
+
+def test_bytes_to_latitude():
+    assert bytes_to_latitude(bytearray([0x00, 0x00, 0x00, 0x01])) == 0.000005555555555555556
+    
+def test_bytes_to_longitude():
+    assert bytes_to_longitude(bytearray([0x00, 0x00, 0x00, 0x01])) == 0.000005555555555555556
+
 
 def parse_course_status(course_status_bytes):
     course_status = int.from_bytes(course_status_bytes, byteorder='big')
@@ -141,7 +156,6 @@ def get_operator_from_mcc_mnc(mcc, mnc):
     return "Operadora Desconhecida"
 
 def interpret_battery_voltage(level):
-    """Interpreta o nível de voltagem da bateria de acordo com a descrição fornecida."""
     if level == 0:
         return "Lowest power and power off"
     elif level == 1:
@@ -166,12 +180,14 @@ def external_voltage_to_bytes(voltage):
 import datetime
 
 def seconds_to_hms(seconds):
-    """Converte o tempo acumulado em segundos para o formato de horas, minutos e segundos."""
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours}h {minutes}m {seconds}s"
 
 def extract_protocol_17_fields(byte_array):
+    if len(byte_array) < 50: 
+        raise ValueError("Pacote muito curto para o protocolo 0x17.")
+    
     date_time = byte_array[4:10]
     formatted_date_time = translate_date_time(date_time)
 
@@ -226,9 +242,12 @@ def extract_protocol_17_fields(byte_array):
         "Mileage": f"{mileage} meters",
         "Hourmeter": hourmeter_formatted,
         "Information Serial Number": information_serial_number,
+        "Error Check": error_check,
         "End Bit": byte_array[49:51].hex().upper(),
     }
     return specific_fields
+
+    
 
 def translate_date_time(byte_array):
     year = byte_array[0] % 100
@@ -283,6 +302,8 @@ def start_server(host='localhost', port=5050):
                         send_response(conn, f"Erro ao processar pacote: {str(e)}")
                 except Exception as e:
                     handle_error(e, addr)
+
+
 
 if __name__ == "__main__":
     start_server()
