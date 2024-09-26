@@ -17,3 +17,6 @@
 78782E17190219151445AB031DF66605C49FE50069BC014E03F90400560748019C06E200000A5B00003AFB003731650D0A
 
  servidor ACK
+eu vou adicionar O pacote de resposta do servidor para o dispositivo: o número do protocolo em   O pacote de resposta é idêntico ao número do protocolo no pacote de dados enviado  
+pelo dispositivo.
+
