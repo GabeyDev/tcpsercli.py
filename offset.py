@@ -116,7 +116,6 @@ def parse_course_status(course_status_bytes):
         "Course": course
     }
 
-# Mapeamento de MCC para países
 mcc_country_mapping = {
     "724": "Brasil",
     "310": "Estados Unidos",
@@ -124,7 +123,6 @@ mcc_country_mapping = {
     "460": "China",
 }
 
-# Mapeamento de MNC para operadoras
 mnc_mapping = {
     "724": {  # Brasil
         "02": "TIM",
@@ -247,7 +245,29 @@ def extract_protocol_17_fields(byte_array):
     }
     return specific_fields
 
-    
+def calculate_checksum(byte_array):
+    checksum = 0
+    for b in byte_array:
+        checksum ^= b
+    return checksum.to_bytes(2, byteorder='big')
+
+def create_ack_packet(protocol_number, information_serial_number):
+    start_bit = bytearray.fromhex("7878")
+    length = bytearray([0x05])
+    protocol_num = bytearray([protocol_number])
+    info_serial_num = information_serial_number.to_bytes(2, byteorder='big')
+    packet_without_crc = length + protocol_num + info_serial_num
+    crc = calculate_checksum(packet_without_crc)
+    end_bit = bytearray.fromhex("0D0A")
+    ack_packet = start_bit + packet_without_crc + crc + end_bit
+    return ack_packet
+
+def parse_ack_packet()
+
+def send_ack_response(conn, protocol_number, information_serial_number):
+    ack_packet = create_ack_packet(protocol_number, information_serial_number)
+    conn.sendall(ack_packet)
+    print(f"ACK enviado: {ack_packet.hex().upper()}")
 
 def translate_date_time(byte_array):
     year = byte_array[0] % 100
@@ -256,7 +276,6 @@ def translate_date_time(byte_array):
     hour = byte_array[3]
     minute = byte_array[4]
     second = byte_array[5]
-    
     return f"{year:02d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
 
 def handle_error(e, addr):
@@ -297,13 +316,17 @@ def start_server(host='localhost', port=5050):
                         parsed_packet = parse_hex_strings(hex_string)
                         print("Pacote Analisado:", parsed_packet)
                         send_response(conn, "Pacote processado com sucesso.")
+
+                        # Enviando o ACK
+                        protocol_number = int(parsed_packet["Protocol Number"], 16)
+                        information_serial_number = parsed_packet["Information Serial Number"]
+                        send_ack_response(conn, protocol_number, information_serial_number)
+
                     except Exception as e:
                         handle_error(e, addr)
                         send_response(conn, f"Erro ao processar pacote: {str(e)}")
                 except Exception as e:
                     handle_error(e, addr)
-
-
 
 if __name__ == "__main__":
     start_server()
