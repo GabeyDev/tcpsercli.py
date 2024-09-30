@@ -2,6 +2,10 @@ import socket
 import logging
 import signal
 import sys
+import threading
+import logging
+import traceback
+
 
 def setup_logging():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -186,64 +190,70 @@ def extract_protocol_17_fields(byte_array):
     if len(byte_array) < 50: 
         raise ValueError("Pacote muito curto para o protocolo 0x17.")
     
-    date_time = byte_array[4:10]
-    formatted_date_time = translate_date_time(date_time)
+    try:
+        date_time = byte_array[4:10]
+        formatted_date_time = translate_date_time(date_time)
 
-    latitude = bytes_to_latitude(byte_array[11:15])
-    longitude = bytes_to_longitude(byte_array[15:19])
+        latitude = bytes_to_latitude(byte_array[11:15])
+        longitude = bytes_to_longitude(byte_array[15:19])
 
-    mcc = int.from_bytes(byte_array[22:24], byteorder='big')
-    mnc = byte_array[24]
+        mcc = int.from_bytes(byte_array[22:24], byteorder='big')
+        mnc = byte_array[24]
 
-    battery_voltage_level = byte_array[31]
-    battery_voltage_description = interpret_battery_voltage(battery_voltage_level)
+        battery_voltage_level = byte_array[31]
+        battery_voltage_description = interpret_battery_voltage(battery_voltage_level)
 
-    battery_voltage_raw = int.from_bytes(byte_array[33:35], byteorder='big')
-    battery_voltage_value = battery_voltage_raw / 100 
+        battery_voltage_raw = int.from_bytes(byte_array[33:35], byteorder='big')
+        battery_voltage_value = battery_voltage_raw / 100 
 
-    external_voltage_raw = int.from_bytes(byte_array[35:37], byteorder='big')
-    external_voltage_value = external_voltage_raw / 100
+        external_voltage_raw = int.from_bytes(byte_array[35:37], byteorder='big')
+        external_voltage_value = external_voltage_raw / 100
 
-    mileage = int.from_bytes(byte_array[37:41], byteorder='big', signed=False)
+        mileage = int.from_bytes(byte_array[37:41], byteorder='big', signed=False)
 
-    hourmeter_seconds = int.from_bytes(byte_array[41:45], byteorder='big', signed=False)
-    hourmeter_formatted = seconds_to_hms(hourmeter_seconds)
+        hourmeter_seconds = int.from_bytes(byte_array[41:45], byteorder='big', signed=False)
+        hourmeter_formatted = seconds_to_hms(hourmeter_seconds)
 
-    information_serial_number = int.from_bytes(byte_array[45:47], byteorder='big', signed=False)
+        information_serial_number = int.from_bytes(byte_array[45:47], byteorder='big', signed=False)
 
-    error_check = byte_array[47:49].hex().upper()
-    
-    specific_fields = {
-        "GPS Information": {   
-            "Date Time": formatted_date_time,
-            "Quantity of GPS Satellites": byte_array[10],
-            "Latitude": latitude,
-            "Longitude": longitude,
-            "Speed": f"{int.from_bytes(byte_array[19:21], byteorder='big')} km/h",
-            "Course Status": parse_course_status(byte_array[20:22])
-        },
-        "LBS Information": {            
-            "MCC": mcc,
-            "Country": get_country_from_mcc(mcc),
-            "MNC": mnc,
-            "Operator": get_operator_from_mcc_mnc(mcc, mnc),
-            "LAC": int.from_bytes(byte_array[25:27], byteorder='big'),
-            "Cell ID": int.from_bytes(byte_array[27:30], byteorder='big'),
-        },
-        "Status Information": {
-            "Device Status": "Active" if byte_array[30] & 0x01 else "Inactive",
-            "Battery Voltage Level": f"{battery_voltage_level} - {battery_voltage_description}",
-            "GSM Signal Strength": f"{byte_array[32]}%", 
-            "Battery Voltage": f"{battery_voltage_value:.2f}V",
-            "External Voltage": f"{external_voltage_value:.2f}V",
-        },
-        "Mileage": f"{mileage} meters",
-        "Hourmeter": hourmeter_formatted,
-        "Information Serial Number": information_serial_number,
-        "Error Check": error_check,
-        "End Bit": byte_array[49:51].hex().upper(),
-    }
-    return specific_fields
+        error_check = byte_array[47:49].hex().upper()
+
+        specific_fields = {
+            "GPS Information": {
+                "Date Time": formatted_date_time,
+                "Quantity of GPS Satellites": byte_array[10],
+                "Latitude": latitude,
+                "Longitude": longitude,
+                "Speed": f"{int.from_bytes(byte_array[19:21], byteorder='big')} km/h",
+                "Course Status": parse_course_status(byte_array[20:22])
+            },
+            "LBS Information": {
+                "MCC": mcc,
+                "Country": get_country_from_mcc(mcc),
+                "MNC": mnc,
+                "Operator": get_operator_from_mcc_mnc(mcc, mnc),
+                "LAC": int.from_bytes(byte_array[25:27], byteorder='big'),
+                "Cell ID": int.from_bytes(byte_array[27:30], byteorder='big'),
+            },
+            "Status Information": {
+                "Device Status": "Active" if byte_array[30] & 0x01 else "Inactive",
+                "Battery Voltage Level": f"{battery_voltage_level} - {battery_voltage_description}",
+                "GSM Signal Strength": f"{byte_array[32]}%", 
+                "Battery Voltage": f"{battery_voltage_value:.2f}V",
+                "External Voltage": f"{external_voltage_value:.2f}V",
+            },
+            "Mileage": f"{mileage} meters",
+            "Hourmeter": hourmeter_formatted,
+            "Information Serial Number": information_serial_number,
+            "Error Check": error_check,
+            "End Bit": byte_array[49:51].hex().upper(),
+        }
+        
+        return specific_fields
+    except Exception as e:
+        logging.error(f"Erro ao extrair campos do protocolo 0x17: {e}")
+        raise
+
 
 def calculate_checksum(byte_array):
     checksum = 0
@@ -256,20 +266,14 @@ def create_ack_packet(protocol_number, information_serial_number):
     length = bytearray([0x05])
     protocol_num = bytearray([protocol_number])
     info_serial_num = information_serial_number.to_bytes(2, byteorder='big')
-    packet_without_crc = length + protocol_num + info_serial_num
-    crc = calculate_checksum(packet_without_crc)
+    packet_without_error_check = length + protocol_num + info_serial_num
+    error_check = calculate_checksum(packet_without_error_check)
     end_bit = bytearray.fromhex("0D0A")
-    ack_packet = start_bit + packet_without_crc + crc + end_bit
+    ack_packet = start_bit + packet_without_error_check + error_check + end_bit
     return ack_packet
 
 def parse_ack_packet(data):
-    """
-    Analisa um pacote ACK recebido.
-
-    :param data: Os bytes do pacote ACK.
-    :return: Um dicionário com as informações extraídas do pacote ACK.
-    """
-    if len(data) < 7:  # Verifica se o pacote tem tamanho mínimo esperado
+    if len(data) < 10:
         raise ValueError("Pacote ACK muito curto.")
 
     start_bit = data[:2]
@@ -279,22 +283,19 @@ def parse_ack_packet(data):
     received_crc = data[6:8]
     end_bit = data[8:]
 
-    # Verifica se os bits de início e fim são válidos
     if start_bit != bytearray.fromhex("7878"):
-        raise ValueError("Bit de início inválido.")
+        raise ValueError("Start Bit inválido.")
     if end_bit != bytearray.fromhex("0D0A"):
-        raise ValueError("Bit de fim inválido.")
+        raise ValueError("End Bit inválido.")
 
-    # Valida o comprimento do pacote
-    expected_length = length + 5  # 5 é o número de bytes fixos
-    if len(data) != expected_length + 2:  # +2 para o CRC
+    expected_length = length + 5
+    if len(data) != expected_length + 2:
         raise ValueError(f"Comprimento do pacote inválido. Esperado {expected_length + 2}, mas recebeu {len(data)}.")
 
-    # Calcula o CRC do pacote (excluindo o CRC recebido)
-    packet_without_crc = data[:6]
-    calculated_crc = calculate_checksum(packet_without_crc)
+    packet_without_error_check = data[:6]
+    calculated_error_check = calculate_checksum(packet_without_error_check)
 
-    if received_crc != calculated_crc:
+    if received_crc != calculated_error_check:
         raise ValueError("Checksum inválido.")
 
     return {
@@ -317,9 +318,76 @@ def translate_date_time(byte_array):
     second = byte_array[5]
     return f"{year:02d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
 
-def handle_error(e, addr):
-    logging.error(f"Dados recebidos: {datetime.date.hex().upper()}")
-    # Optionally, you can log the raw data that caused the issue
+def handle_error(e, data):
+    logging.error(f"Erro ao processar dados: {data.hex().upper()}")
+
+def processar_pacote(data, conn):
+    try:
+        if not isinstance(data, bytearray):
+            raise ValueError("Os dados devem ser um bytearray.")
+
+        start_bit = data[:2]
+        length = data[2]
+        protocol_number = data[3]
+        information_serial_number = int.from_bytes(data[4:6], byteorder='big')
+        
+        # Validate the start bit
+        if start_bit != bytearray.fromhex("7878"):
+            raise ValueError("Start Bit inválido.")
+
+        # Process the packet based on its protocol
+        common_fields = parse_hex_strings(data.hex())
+        logging.info(f"Pacote processado: {common_fields}")
+
+        # Send an acknowledgment response
+        send_ack_response(conn, protocol_number, information_serial_number)
+
+    except Exception as e:
+        handle_error(e, data)
+
+def start_server(host='0.0.0.0', port=5050):
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((host, port))
+    server_socket.listen(5)
+    logging.info(f"Servidor escutando em {host}:{port}")
+
+    while True:
+        try:
+            conn, addr = server_socket.accept()
+            logging.info(f"Conexão estabelecida com {addr}")
+            thread = threading.Thread(target=handle_client, args=(conn,))
+            thread.start()
+        except KeyboardInterrupt:
+            logging.info("Servidor interrompido.")
+            break
+    server_socket.close()
+
+def handle_client(conn):
+    with conn:
+        while True:
+            data = conn.recv(1024)
+            if not data:
+                break
+            processar_pacote(bytearray(data), conn)
+
+if __name__ == "__main__":
+    start_server()
+
+
+def processar_resposta_servidor(data):
+    start_bit = data[:4]
+    length = int(data[4:6], 16)
+    protocol_number = data[6:8]
+    serial_number = data[8:12]
+    error_check = data[12:16]
+    end_bit = data[16:] 
+
+    logging.info(f"Resposta do servidor decodificada: Start Bit: {start_bit}, "
+                 f"Length: {length}, Protocol Number: {protocol_number}, "
+                 f"Serial Number: {serial_number}, Error Check: {error_check}, End Bit: {end_bit}")
+
+def processar_dados_dispositivo(data):
+    pass
 
 
 def send_response(conn, message):
@@ -331,43 +399,52 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-def start_server(host='localhost', port=5050):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-        server_socket.bind((host, port))
-        server_socket.listen()
 
-        print(f"Servidor escutando em {host}:{port}")
+def handle_client_connection(conn, addr):
+    try:
+        logging.info(f"Conexão estabelecida com {addr}")
+        while True:
+            data = conn.recv(1024)
+            if not data:
+                logging.info(f"Conexão encerrada por {addr}")
+                break
+
+            try:
+                logging.info(f"Dados recebidos de {addr}: {data.hex().upper()}")
+                parsed_data = parse_hex_strings(data.hex())
+                logging.info(f"Dados decodificados: {parsed_data}")
+                
+                protocol_number = int(parsed_data["Protocol Number"], 16)
+                information_serial_number = parsed_data.get("Information Serial Number", 0)
+                send_ack_response(conn, protocol_number, information_serial_number)
+            
+            except ValueError as e:
+                handle_error(e, data)
+
+    except Exception as e:
+        logging.error(f"Erro na conexão com {addr}: {e}")
+
+    finally:
+        conn.close()
+
+
+def start_server(host="0.0.0.0", port=5050):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind((host, port))
+        server_socket.listen(5)
+        logging.info(f"Servidor TCP iniciado em {host}:{port}")
 
         while True:
             conn, addr = server_socket.accept()
-            print(f"Conexão estabelecida com {addr}")
-            
-            while True:
-                try:
-                    data = conn.recv(1024)
-                    if not data:
-                        print(f"Conexão encerrada por {addr}")
-                        break
+            client_thread = threading.Thread(target=handle_client_connection, args=(conn, addr))
+            client_thread.start()
 
-                    hex_string = data.hex().upper()
-
-                    print(f"Pacote recebido (em bytes): {len(data)}")
-
-                    try:
-                        parsed_packet = parse_hex_strings(hex_string)
-                        print("Pacote Analisado:", parsed_packet)
-                        send_response(conn, "Pacote processado com sucesso.")
-
-                        # Enviando o ACK
-                        protocol_number = int(parsed_packet["Protocol Number"], 16)
-                        information_serial_number = parsed_packet["Information Serial Number"]
-                        send_ack_response(conn, protocol_number, information_serial_number)
-
-                    except Exception as e:
-                        handle_error(e, addr)
-                        send_response(conn, f"Erro ao processar pacote: {str(e)}")
-                except Exception as e:
-                    handle_error(e, addr)
 
 if __name__ == "__main__":
-    start_server()
+    try:
+        start_server()
+    except Exception as e:
+        logging.error(f"Erro ao iniciar o servidor: {e}")
+    except KeyboardInterrupt:
+        logging.info("Servidor interrompido.")
