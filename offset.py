@@ -262,7 +262,46 @@ def create_ack_packet(protocol_number, information_serial_number):
     ack_packet = start_bit + packet_without_crc + crc + end_bit
     return ack_packet
 
-def parse_ack_packet()
+def parse_ack_packet(data):
+    """
+    Analisa um pacote ACK recebido.
+
+    :param data: Os bytes do pacote ACK.
+    :return: Um dicionário com as informações extraídas do pacote ACK.
+    """
+    if len(data) < 7:  # Verifica se o pacote tem tamanho mínimo esperado
+        raise ValueError("Pacote ACK muito curto.")
+
+    start_bit = data[:2]
+    length = data[2]
+    protocol_number = data[3]
+    information_serial_number = int.from_bytes(data[4:6], byteorder='big')
+    received_crc = data[6:8]
+    end_bit = data[8:]
+
+    # Verifica se os bits de início e fim são válidos
+    if start_bit != bytearray.fromhex("7878"):
+        raise ValueError("Bit de início inválido.")
+    if end_bit != bytearray.fromhex("0D0A"):
+        raise ValueError("Bit de fim inválido.")
+
+    # Valida o comprimento do pacote
+    expected_length = length + 5  # 5 é o número de bytes fixos
+    if len(data) != expected_length + 2:  # +2 para o CRC
+        raise ValueError(f"Comprimento do pacote inválido. Esperado {expected_length + 2}, mas recebeu {len(data)}.")
+
+    # Calcula o CRC do pacote (excluindo o CRC recebido)
+    packet_without_crc = data[:6]
+    calculated_crc = calculate_checksum(packet_without_crc)
+
+    if received_crc != calculated_crc:
+        raise ValueError("Checksum inválido.")
+
+    return {
+        "Protocol Number": protocol_number,
+        "Information Serial Number": information_serial_number
+    }
+
 
 def send_ack_response(conn, protocol_number, information_serial_number):
     ack_packet = create_ack_packet(protocol_number, information_serial_number)
@@ -279,7 +318,9 @@ def translate_date_time(byte_array):
     return f"{year:02d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
 
 def handle_error(e, addr):
-    logging.error(f"Erro de conexão com {addr}: {e}")
+    logging.error(f"Dados recebidos: {datetime.date.hex().upper()}")
+    # Optionally, you can log the raw data that caused the issue
+
 
 def send_response(conn, message):
     conn.sendall(message.encode('utf-8'))
